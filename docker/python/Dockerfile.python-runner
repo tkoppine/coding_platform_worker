@@ -1,0 +1,6 @@
+
+FROM python:3.11-slim-bookworm
+
+WORKDIR /app
+
+CMD ["sh", "-c", "echo 'Python runner ready'"]
