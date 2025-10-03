@@ -51,18 +51,18 @@ public class WorkerService {
         System.out.println("Worker Service started, listening for messages...");
 
         while (true) {
-            ReceiveMessageResponse response = sqsClient.receiveMessage(
+            ReceiveMessageResponse sqsResponse = sqsClient.receiveMessage(
                     ReceiveMessageRequest.builder()
                             .queueUrl(REQUEST_QUEUE_URL)
                             .maxNumberOfMessages(1)
                             .waitTimeSeconds(10)
                             .build());
 
-            if (response.messages().isEmpty()) {
+            if (sqsResponse.messages().isEmpty()) {
                 continue;
             }
 
-            for (Message sqsMessage : response.messages()) {
+            for (Message sqsMessage : sqsResponse.messages()) {
                 Path localFilePath = null;
                 try {
                     JobMessage job = objectMapper.readValue(sqsMessage.body(), JobMessage.class);
@@ -70,9 +70,18 @@ public class WorkerService {
 
                     localFilePath = downloadCode(job.getJobId(), job.getS3Key());
 
-                    String executionResult;
+                    String finalResult;
                     try {
-                        executionResult = dockerRunner.runContainer(job.getLanguage(), localFilePath.toString());
+                        DockerRunner.ExecutionResponse execResponse = dockerRunner.runContainer(job.getLanguage(),
+                                localFilePath.toString());
+
+                        String parsedResult = parseResult(execResponse.getOutput());
+
+                        finalResult = "{"
+                                + "\"jobId\":\"" + job.getJobId() + "\","
+                                + "\"executionTimeMs\":" + execResponse.getExecutionTimeMs() + ","
+                                + "\"result\":" + parsedResult
+                                + "}";
                     } catch (Exception e) {
                         System.err.println(e);
                         resultPublisher.publishResult(RESPONSE_QUEUE_URL, job.getJobId(),
@@ -80,7 +89,7 @@ public class WorkerService {
                         continue;
                     }
 
-                    resultPublisher.publishResult(RESPONSE_QUEUE_URL, job.getJobId(), executionResult);
+                    resultPublisher.publishResult(RESPONSE_QUEUE_URL, job.getJobId(), finalResult);
 
                     sqsClient.deleteMessage(DeleteMessageRequest.builder()
                             .queueUrl(REQUEST_QUEUE_URL)
@@ -109,6 +118,26 @@ public class WorkerService {
                 }
             }
         }
+    }
+
+    private String parseResult(String output) {
+        for (String line : output.split("\n")) {
+            if (line.startsWith("RESULT:")) {
+                return line.substring(7);
+            }
+        }
+        return "{"
+                + "\"status\":\"error\","
+                + "\"message\":\"" + summarizeError(output) + "\""
+                + "}";
+    }
+
+    private String summarizeError(String output) {
+        String[] lines = output.split("\n");
+        if (lines.length > 0) {
+            return lines[0].replace("\"", "'");
+        }
+        return "Unknown error";
     }
 
     private Path downloadCode(String jobId, String s3Key) throws IOException {
