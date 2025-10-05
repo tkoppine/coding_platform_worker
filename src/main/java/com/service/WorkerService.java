@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -22,9 +23,12 @@ import software.amazon.awssdk.services.sqs.model.ReceiveMessageResponse;
 
 @Service
 public class WorkerService {
-    private static final String REQUEST_QUEUE_URL = "https://sqs.us-east-2.amazonaws.com/012560051368/code-submission-request";
-    private static final String RESPONSE_QUEUE_URL = "https://sqs.us-east-2.amazonaws.com/012560051368/code-results-response";
-    private static final String BUCKET_NAME = "candidate-code-submission";
+    @Value("${aws.sqs.request.queue.url}")
+    private String REQUEST_QUEUE_URL;
+    @Value("${aws.sqs.response.queue.url}")
+    private String RESPONSE_QUEUE_URL;
+    @Value("${aws.s3.bucket.name}")
+    private String BUCKET_NAME;
 
     private final SqsClient sqsClient;
     private final S3Client s3Client;
